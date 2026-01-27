@@ -1,0 +1,36 @@
+# -----------------------------
+# Core Backend
+# -----------------------------
+fastapi
+uvicorn
+pydantic
+python-multipart
+
+# -----------------------------
+# Data Handling
+# -----------------------------
+numpy
+pandas
+
+# -----------------------------
+# Clinical ML (Tabular Data)
+# -----------------------------
+scikit-learn
+joblib
+
+# -----------------------------
+# Image Processing & CNN
+# -----------------------------
+Pillow
+opencv-python
+tensorflow
+
+# -----------------------------
+# Local LLM Integration
+# -----------------------------
+requests
+
+# -----------------------------
+# Utilities
+# -----------------------------
+python-dotenv
