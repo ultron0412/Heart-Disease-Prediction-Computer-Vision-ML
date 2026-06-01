@@ -25,7 +25,8 @@ async def predict(
 
     try:
         # 1️⃣ Clinical ML prediction (PRIMARY)
-        clinical_prob = predict_clinical_risk(data.dict())
+        clinical_data = data.dict(exclude={"symptoms"})
+        clinical_prob = predict_clinical_risk(clinical_data)
 
         # 2️⃣ ECG CNN prediction (OPTIONAL)
         ecg_prob = 0.0
@@ -46,7 +47,7 @@ async def predict(
             ecg_prob=ecg_prob
         )
 
-        ### 4️⃣ Human-readable explanation
+        # 4️⃣ Human-readable explanation
         explanation = (
             f"Clinical data indicates a {fusion_result['risk_category'].lower()} "
             f"with a clinical risk probability of {fusion_result['clinical_probability']}. "
@@ -65,7 +66,10 @@ async def predict(
         return PredictionResponse(
             risk_score=fusion_result["final_risk_score"],
             risk_level=fusion_result["risk_category"],
-            explanation=explanation
+            explanation=explanation,
+            clinical_probability=fusion_result["clinical_probability"],
+            ecg_probability=fusion_result["ecg_probability"],
+            confidence=fusion_result["final_risk_score"]
         )
 
     except Exception as e:
