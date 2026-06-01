@@ -1,6 +1,6 @@
-from backend.app.models.clinical.predictor import predict_clinical
-from backend.app.models.image.predictor import predict_ecg_image
-from backend.app.fusion.risk_fusion import fuse_risk
+from app.models.clinical.predictor import predict_clinical_risk
+from app.models.image.predictor import predict_ecg_image
+from app.fusion.risk_fusion import fuse_risk
 
 def predict_heart_disease(
     clinical_data: dict,
@@ -11,7 +11,7 @@ def predict_heart_disease(
     """
 
     # 1. Clinical prediction
-    clinical_prob = predict_clinical(clinical_data)
+    clinical_prob = predict_clinical_risk(clinical_data)
 
     # 2. ECG prediction (optional)
     ecg_prob = 0.0
