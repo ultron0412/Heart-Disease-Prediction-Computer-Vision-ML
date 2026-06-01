@@ -1,67 +1,61 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from pathlib import Path
+from __future__ import annotations
+
+import json
 import shutil
 import uuid
+from pathlib import Path
 
-from app.schemas.prediction import PredictionRequest, PredictionResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+
+from app.fusion.risk_fusion import fuse_risk
 from app.models.clinical.predictor import predict_clinical_risk
 from app.models.image.predictor import predict_ecg_image
-from app.fusion.risk_fusion import fuse_risk
+from app.schemas.prediction import PredictionRequest, PredictionResponse
 
 router = APIRouter()
 
-# Temporary upload directory for ECG images
 UPLOAD_DIR = Path("temp_images")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+
 @router.post("/predict", response_model=PredictionResponse)
 async def predict(
-    data: PredictionRequest,
-    ecg_image: UploadFile | None = File(None)
+    request: Request,
+    data: str | None = Form(None),
+    ecg_image: UploadFile | None = File(None),
 ):
-    """
-    Multimodal heart disease prediction endpoint
-    """
-
+    """Multimodal heart disease prediction endpoint."""
     try:
-        # 1️⃣ Clinical ML prediction (PRIMARY)
-        clinical_data = data.dict(exclude={"symptoms"})
+        if data is not None:
+            payload = json.loads(data)
+        else:
+            payload = await request.json()
+
+        parsed = PredictionRequest(**payload)
+        clinical_data = parsed.model_dump(exclude={"symptoms"})
         clinical_prob = predict_clinical_risk(clinical_data)
 
-        # 2️⃣ ECG CNN prediction (OPTIONAL)
-        ecg_prob = 0.0
-        image_path = None
-
+        ecg_prob: float | None = None
         if ecg_image:
             filename = f"{uuid.uuid4()}_{ecg_image.filename}"
             image_path = UPLOAD_DIR / filename
-
-            with open(image_path, "wb") as f:
-                shutil.copyfileobj(ecg_image.file, f)
-
+            with open(image_path, "wb") as file_obj:
+                shutil.copyfileobj(ecg_image.file, file_obj)
             ecg_prob = predict_ecg_image(str(image_path))
 
-        # 3️⃣ Decision Fusion
-        fusion_result = fuse_risk(
-            clinical_prob=clinical_prob,
-            ecg_prob=ecg_prob
-        )
+        fusion_result = fuse_risk(clinical_prob=clinical_prob, ecg_prob=ecg_prob)
 
-        # 4️⃣ Human-readable explanation
         explanation = (
-            f"Clinical data indicates a {fusion_result['risk_category'].lower()} "
-            f"with a clinical risk probability of {fusion_result['clinical_probability']}. "
+            f"Clinical model probability is {fusion_result['clinical_probability']:.3f}. "
+            f"Final risk category is {fusion_result['risk_category']}. "
         )
-
-        if ecg_image:
+        if fusion_result["ecg_used"]:
             explanation += (
-                f"ECG image analysis supports this assessment "
-                f"(ECG risk probability: {fusion_result['ecg_probability']})."
+                f"ECG probability is {fusion_result['ecg_probability']:.3f} and contributes "
+                f"with dynamic weight {fusion_result['ecg_weight']:.3f}."
             )
         else:
-            explanation += (
-                "ECG image was not provided, so prediction is based on clinical data only."
-            )
+            explanation += "No ECG image was provided, so prediction is clinical-only."
 
         return PredictionResponse(
             risk_score=fusion_result["final_risk_score"],
@@ -69,8 +63,13 @@ async def predict(
             explanation=explanation,
             clinical_probability=fusion_result["clinical_probability"],
             ecg_probability=fusion_result["ecg_probability"],
-            confidence=fusion_result["final_risk_score"]
+            confidence=fusion_result["model_agreement"],
+            clinical_weight=fusion_result["clinical_weight"],
+            ecg_weight=fusion_result["ecg_weight"],
+            ecg_used=fusion_result["ecg_used"],
+            model_agreement=fusion_result["model_agreement"],
         )
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {error}") from error
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
