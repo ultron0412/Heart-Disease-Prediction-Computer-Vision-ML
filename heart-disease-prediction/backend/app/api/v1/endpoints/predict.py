@@ -4,8 +4,10 @@ import json
 import shutil
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from pydantic import ValidationError
 
 from app.fusion.risk_fusion import fuse_risk
 from app.models.clinical.predictor import predict_clinical_risk
@@ -14,8 +16,16 @@ from app.schemas.prediction import PredictionRequest, PredictionResponse
 
 router = APIRouter()
 
-UPLOAD_DIR = Path("temp_images")
+BACKEND_ROOT = Path(__file__).resolve().parents[4]
+UPLOAD_DIR = BACKEND_ROOT / "temp_images"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+def _to_dict(model: PredictionRequest) -> dict[str, Any]:
+    """Support both Pydantic v1 and v2."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump(exclude={"symptoms"})
+    return model.dict(exclude={"symptoms"})
 
 
 @router.post("/predict", response_model=PredictionResponse)
@@ -25,19 +35,23 @@ async def predict(
     ecg_image: UploadFile | None = File(None),
 ):
     """Multimodal heart disease prediction endpoint."""
+    image_path: Path | None = None
     try:
         if data is not None:
             payload = json.loads(data)
         else:
             payload = await request.json()
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=400, detail="JSON body must be an object.")
 
         parsed = PredictionRequest(**payload)
-        clinical_data = parsed.model_dump(exclude={"symptoms"})
+        clinical_data = _to_dict(parsed)
         clinical_prob = predict_clinical_risk(clinical_data)
 
         ecg_prob: float | None = None
         if ecg_image:
-            filename = f"{uuid.uuid4()}_{ecg_image.filename}"
+            safe_name = Path(ecg_image.filename or "ecg_image").name
+            filename = f"{uuid.uuid4()}_{safe_name}"
             image_path = UPLOAD_DIR / filename
             with open(image_path, "wb") as file_obj:
                 shutil.copyfileobj(ecg_image.file, file_obj)
@@ -46,16 +60,17 @@ async def predict(
         fusion_result = fuse_risk(clinical_prob=clinical_prob, ecg_prob=ecg_prob)
 
         explanation = (
-            f"Clinical model probability is {fusion_result['clinical_probability']:.3f}. "
-            f"Final risk category is {fusion_result['risk_category']}. "
+            f"Based on your health details, your estimated risk score is "
+            f"{fusion_result['clinical_probability']:.3f}. "
+            f"Overall result: {fusion_result['risk_category']}. "
         )
         if fusion_result["ecg_used"]:
             explanation += (
-                f"ECG probability is {fusion_result['ecg_probability']:.3f} and contributes "
-                f"with dynamic weight {fusion_result['ecg_weight']:.3f}."
+                f"Your ECG image score is {fusion_result['ecg_probability']:.3f}, "
+                f"and it was included in the final result."
             )
         else:
-            explanation += "No ECG image was provided, so prediction is clinical-only."
+            explanation += "No ECG image was provided, so the result uses health details only."
 
         return PredictionResponse(
             risk_score=fusion_result["final_risk_score"],
@@ -69,7 +84,16 @@ async def predict(
             ecg_used=fusion_result["ecg_used"],
             model_agreement=fusion_result["model_agreement"],
         )
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=error.errors()) from error
     except json.JSONDecodeError as error:
         raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {error}") from error
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    finally:
+        if ecg_image is not None:
+            await ecg_image.close()
+        if image_path and image_path.exists():
+            image_path.unlink(missing_ok=True)
