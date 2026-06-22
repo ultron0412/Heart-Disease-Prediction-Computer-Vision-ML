@@ -10,9 +10,11 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import ValidationError
 
 from app.fusion.risk_fusion import fuse_risk
+from app.logger import logger
 from app.models.clinical.predictor import predict_clinical_risk
 from app.models.image.predictor import predict_ecg_image
 from app.schemas.prediction import PredictionRequest, PredictionResponse
+from app.services.llm_service import build_prediction_explanation
 
 router = APIRouter()
 
@@ -59,18 +61,7 @@ async def predict(
 
         fusion_result = fuse_risk(clinical_prob=clinical_prob, ecg_prob=ecg_prob)
 
-        explanation = (
-            f"Based on your health details, your estimated risk score is "
-            f"{fusion_result['clinical_probability']:.3f}. "
-            f"Overall result: {fusion_result['risk_category']}. "
-        )
-        if fusion_result["ecg_used"]:
-            explanation += (
-                f"Your ECG image score is {fusion_result['ecg_probability']:.3f}, "
-                f"and it was included in the final result."
-            )
-        else:
-            explanation += "No ECG image was provided, so the result uses health details only."
+        explanation = build_prediction_explanation(payload, fusion_result)
 
         return PredictionResponse(
             risk_score=fusion_result["final_risk_score"],
@@ -91,7 +82,11 @@ async def predict(
     except HTTPException:
         raise
     except Exception as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        logger.exception("Prediction request failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Prediction failed due to a server-side error.",
+        ) from error
     finally:
         if ecg_image is not None:
             await ecg_image.close()
