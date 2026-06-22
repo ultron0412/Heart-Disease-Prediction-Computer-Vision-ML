@@ -2,8 +2,23 @@ from __future__ import annotations
 
 """Decision-level fusion for clinical + ECG predictions."""
 
+from typing import Literal, TypedDict
 
-def _risk_category(final_risk: float) -> str:
+RiskCategory = Literal["Low Risk", "Moderate Risk", "High Risk"]
+
+
+class FusionResult(TypedDict):
+    clinical_probability: float
+    ecg_probability: float
+    clinical_weight: float
+    ecg_weight: float
+    ecg_used: bool
+    model_agreement: float
+    final_risk_score: float
+    risk_category: RiskCategory
+
+
+def _risk_category(final_risk: float) -> RiskCategory:
     if final_risk < 0.30:
         return "Low Risk"
     if final_risk < 0.60:
@@ -11,7 +26,7 @@ def _risk_category(final_risk: float) -> str:
     return "High Risk"
 
 
-def fuse_risk(clinical_prob: float, ecg_prob: float | None = None) -> dict:
+def fuse_risk(clinical_prob: float, ecg_prob: float | None = None) -> FusionResult:
     """
     If ECG is unavailable, use the clinical model only.
     If ECG is available, adapt fusion weight by ECG certainty.
@@ -25,6 +40,7 @@ def fuse_risk(clinical_prob: float, ecg_prob: float | None = None) -> dict:
         ecg_weight = 0.0
         ecg_probability = 0.0
     else:
+        assert ecg_prob is not None
         ecg_probability = max(0.0, min(1.0, float(ecg_prob)))
         ecg_certainty = abs(ecg_probability - 0.5) * 2.0
         ecg_weight = 0.15 + (0.35 * ecg_certainty)
