@@ -48,6 +48,31 @@ Set allowed origins with environment variable:
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
+## Environment Configuration
+
+Copy `.env.example` to `.env` and adjust values as needed:
+
+```bash
+LLM_BASE_URL=http://127.0.0.1:1234
+LLM_MODEL=
+LLM_API_KEY=
+LLM_ENABLED=true
+```
+
+- `LLM_BASE_URL` points to a local OpenAI-compatible endpoint such as LM Studio.
+- `LLM_MODEL` is optional; if omitted, the backend uses the first model returned by `/v1/models`.
+- `LLM_API_KEY` is optional for local providers that do not require auth.
+
+## Quality Checks
+
+Install dev tooling and run the backend QC suite:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+python -m mypy app
+```
+
 ## Common Issues
 
 ### Form data runtime error
