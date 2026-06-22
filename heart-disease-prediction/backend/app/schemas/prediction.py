@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+ConfigDict: Any | None
 try:
     from pydantic import ConfigDict
 except ImportError:  # Pydantic v1 compatibility
-    ConfigDict = None  # type: ignore[assignment]
+    ConfigDict = None
 
 
-if ConfigDict is not None:
-    class StrictBaseModel(BaseModel):
+class StrictBaseModel(BaseModel):
+    if ConfigDict is not None:
         model_config = ConfigDict(extra="forbid")
-else:
-    class StrictBaseModel(BaseModel):
+    else:
         class Config:
             extra = "forbid"
 
