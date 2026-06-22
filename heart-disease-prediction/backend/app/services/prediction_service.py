@@ -1,22 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, TypedDict
+from typing import Mapping
 
-from app.fusion.risk_fusion import fuse_risk
+from app.fusion.risk_fusion import FusionResult, fuse_risk
 from app.models.clinical.predictor import predict_clinical_risk
 from app.models.image.predictor import predict_ecg_image
-
-
-class FusionResult(TypedDict):
-    clinical_probability: float
-    ecg_probability: float
-    clinical_weight: float
-    ecg_weight: float
-    ecg_used: bool
-    model_agreement: float
-    final_risk_score: float
-    risk_category: str
 
 
 def predict_heart_disease(
